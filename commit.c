@@ -269,3 +269,4 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
 /* Phase 4: commit create implemented */
 /* Phase 4: parent detection */
 /* Phase 4: author and timestamp */
+/* Phase 4: commit serialization */
