@@ -311,3 +311,4 @@ int index_add(Index *index, const char *path) {
     return index_save(index);
 }
 /* Phase 3: index load implemented */
+/* Phase 3: atomic save implemented */
