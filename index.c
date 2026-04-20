@@ -314,3 +314,4 @@ int index_add(Index *index, const char *path) {
 /* Phase 3: atomic save implemented */
 /* Phase 3: stack overflow fix */
 /* Phase 3: index add implemented */
+/* Phase 3: mtime and size tracking */
