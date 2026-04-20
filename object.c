@@ -277,3 +277,4 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
 }
 /* Phase 1: hash utilities implemented */
 /* Phase 1: compute hash implemented */
+/* Phase 1: object write implemented */
