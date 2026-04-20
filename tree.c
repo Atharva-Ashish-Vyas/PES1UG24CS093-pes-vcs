@@ -230,3 +230,4 @@ int tree_from_index(ObjectID *id_out)
 /* Phase 2: tree serialization implemented */
 /* Phase 2: recursive tree building */
 /* Phase 2: subdirectory handling */
+/* Phase 2: tree from index */
