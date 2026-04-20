@@ -188,29 +188,60 @@ int make_dirs(const char *path) {
  *
  * Returns 0 on success, -1 on error.
  */
- 
- int object_write(const char *type, const uint8_t *data, size_t len,
+int object_write(const char *type, const uint8_t *data, size_t len,
                  char out_hash[SHA256_HEX_LEN+1]) {
-
-    /* Step 1: Build full object = header + NUL + data */
+ 
+    /* Step 1: Build full object = header + data */
     char header[128];
     int hlen = snprintf(header, sizeof(header), "%s %zu", type, len);
+    /* +1 for the NUL byte after the header */
     size_t total = hlen + 1 + len;
     uint8_t *obj = xmalloc(total);
     memcpy(obj, header, hlen);
-    obj[hlen] = '\0';
+    obj[hlen] = '\0';               /* NUL separator */
     memcpy(obj + hlen + 1, data, len);
-
+ 
     /* Step 2: SHA-256 of the full object */
     char hash[SHA256_HEX_LEN+1];
     sha256_hex(obj, total, hash);
-
+ 
     /* Step 3: Derive storage path */
-    char dir_path[MAX_PATH], obj_path[MAX_PATH];
+    char dir_path[MAX_PATH], obj_path[MAX_PATH], tmp_path[MAX_PATH];
     snprintf(dir_path, sizeof(dir_path), "%s/%.2s", PES_OBJECTS, hash);
     snprintf(obj_path, sizeof(obj_path), "%s/%.2s/%s", PES_OBJECTS, hash, hash+2);
-
+ 
+    /* Step 4: Deduplication — already stored? */
+    if (access(obj_path, F_OK) == 0) {
+        free(obj);
+        strncpy(out_hash, hash, SHA256_HEX_LEN+1);
+        return 0;
+    }
+ 
+    /* Step 5a: Create shard directory */
+    if (make_dirs(dir_path) < 0) { free(obj); return -1; }
+ 
+    /* Step 5b: Write to temp file */
+    snprintf(tmp_path, sizeof(tmp_path), "%s/.tmp_XXXXXX", dir_path);
+    int fd = mkstemp(tmp_path);
+    if (fd < 0) { free(obj); return -1; }
+ 
+    size_t written = 0;
+    while (written < total) {
+        ssize_t n = write(fd, obj + written, total - written);
+        if (n < 0) { close(fd); unlink(tmp_path); free(obj); return -1; }
+        written += n;
+    }
+ 
+    /* Step 5c: fsync */
+    if (fsync(fd) < 0) { close(fd); unlink(tmp_path); free(obj); return -1; }
+    close(fd);
+ 
+    /* Step 5d: Atomic rename */
+    if (rename(tmp_path, obj_path) < 0) { unlink(tmp_path); free(obj); return -1; }
+ 
     free(obj);
+ 
+    /* Step 6: Return hash */
     strncpy(out_hash, hash, SHA256_HEX_LEN+1);
     return 0;
 }
