@@ -165,3 +165,52 @@ int make_dirs(const char *path) {
     if (mkdir(tmp, 0755) < 0 && errno != EEXIST) return -1;
     return 0;
 }
+
+/* ── object_write ───────────────────────────────────────────── */
+/*
+ * TODO: Store `data` (length `len`) as an object of type `type`
+ *       in the PES object store.
+ *
+ * Steps:
+ *   1. Build the full object: "<type> <len>\0<data>"
+ *      - Header is the ASCII string  type + " " + decimal(len) + NUL
+ *      - Followed immediately by the raw data bytes
+ *   2. Compute SHA-256 over the complete object bytes → hex string
+ *   3. Derive storage path:
+ *        .pes/objects/<hash[0..1]>/<hash[2..63]>
+ *   4. If the file already exists → deduplication, return 0 (success)
+ *   5. Otherwise write atomically:
+ *        a. Create the two-char shard directory if needed
+ *        b. Write to a temp file in that directory
+ *        c. fsync() the temp file
+ *        d. rename() it to the final path
+ *   6. Copy the hex hash into out_hash (SHA256_HEX_LEN+1 bytes)
+ *
+ * Returns 0 on success, -1 on error.
+ */
+ 
+ int object_write(const char *type, const uint8_t *data, size_t len,
+                 char out_hash[SHA256_HEX_LEN+1]) {
+
+    /* Step 1: Build full object = header + NUL + data */
+    char header[128];
+    int hlen = snprintf(header, sizeof(header), "%s %zu", type, len);
+    size_t total = hlen + 1 + len;
+    uint8_t *obj = xmalloc(total);
+    memcpy(obj, header, hlen);
+    obj[hlen] = '\0';
+    memcpy(obj + hlen + 1, data, len);
+
+    /* Step 2: SHA-256 of the full object */
+    char hash[SHA256_HEX_LEN+1];
+    sha256_hex(obj, total, hash);
+
+    /* Step 3: Derive storage path */
+    char dir_path[MAX_PATH], obj_path[MAX_PATH];
+    snprintf(dir_path, sizeof(dir_path), "%s/%.2s", PES_OBJECTS, hash);
+    snprintf(obj_path, sizeof(obj_path), "%s/%.2s/%s", PES_OBJECTS, hash, hash+2);
+
+    free(obj);
+    strncpy(out_hash, hash, SHA256_HEX_LEN+1);
+    return 0;
+}
