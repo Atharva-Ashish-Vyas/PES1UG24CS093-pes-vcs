@@ -245,3 +245,92 @@ int object_write(const char *type, const uint8_t *data, size_t len,
     strncpy(out_hash, hash, SHA256_HEX_LEN+1);
     return 0;
 }
+
+/* ── object_read ────────────────────────────────────────────── */
+/*
+ * TODO: Retrieve an object from the store.
+ *
+ * Steps:
+ *   1. Derive the file path from `hash`
+ *   2. Read the entire file into a buffer
+ *   3. Verify integrity: recompute SHA-256 of the file bytes,
+ *      compare to `hash`.  Return -1 if mismatch.
+ *   4. Parse the header: find the NUL byte, extract type string
+ *      and size decimal.
+ *   5. Set *out_type to a pointer inside your buffer (or a static
+ *      string), *out_data to the byte after the NUL, *out_len to
+ *      the data length.
+ *      NOTE: *out_data must remain valid after the function returns.
+ *      Caller is responsible for freeing the underlying allocation.
+ *
+ * Returns 0 on success, -1 on error.
+ *
+ * Hint: The caller receives *out_data which points into the buffer
+ *       you allocate.  A clean design is to return the whole buffer
+ *       in *out_data and let the caller manage it — adjust the
+ *       signature if needed, but keep it compatible with callers in
+ *       tree.c, commit.c, and test_objects.c.
+ *
+ * Simpler approach: allocate one buffer for the whole object, set
+ *   *out_type to point at its start and *out_data to point after the
+ *   NUL, return a handle to free in a wrapper.  The test uses:
+ *
+ *     char *type; uint8_t *data; size_t len;
+ *     object_read(hash, &type, &data, &len);
+ *     // use type, data, len
+ *     free(data - (type - (char*)data_start));  // or however you expose it
+ *
+ * The simplest compatible design: alloc one block, fill header then
+ * data, set *out_type = block, *out_data = block + header_offset,
+ * *out_len = data_size.  Caller frees *out_type to release memory.
+ */
+int object_read(const char *hash, char **out_type,
+                uint8_t **out_data, size_t *out_len) {
+    /* Step 1: Build path */
+    char obj_path[MAX_PATH];
+    snprintf(obj_path, sizeof(obj_path), "%s/%.2s/%s", PES_OBJECTS, hash, hash+2);
+ 
+    /* Step 2: Read entire file */
+    int fd = open(obj_path, O_RDONLY);
+    if (fd < 0) return -1;
+ 
+    struct stat st;
+    if (fstat(fd, &st) < 0) { close(fd); return -1; }
+    size_t total = st.st_size;
+ 
+    uint8_t *buf = xmalloc(total + 1);
+    size_t rd = 0;
+    while (rd < total) {
+        ssize_t n = read(fd, buf + rd, total - rd);
+        if (n <= 0) { close(fd); free(buf); return -1; }
+        rd += n;
+    }
+    close(fd);
+    buf[total] = '\0';
+ 
+    /* Step 3: Verify integrity */
+    char computed[SHA256_HEX_LEN+1];
+    sha256_hex(buf, total, computed);
+    if (strcmp(computed, hash) != 0) {
+        fprintf(stderr, "object_read: integrity check failed for %s\n", hash);
+        free(buf);
+        return -1;
+    }
+ 
+    /* Step 4: Parse header — find NUL byte */
+    uint8_t *nul = memchr(buf, '\0', total);
+    if (!nul) { free(buf); return -1; }
+ 
+    /* Header is "type size" — find the space */
+    char *space = memchr(buf, ' ', nul - buf);
+    if (!space) { free(buf); return -1; }
+    *space = '\0';  /* NUL-terminate type string */
+ 
+    /* Step 5: Set outputs */
+    *out_type = (char *)buf;          /* "blob", "tree", or "commit" */
+    *out_data = nul + 1;              /* byte after the NUL separator */
+    *out_len  = total - (size_t)(nul + 1 - buf);
+ 
+    /* Note: caller should free(*out_type) to release the buffer */
+    return 0;
+}
