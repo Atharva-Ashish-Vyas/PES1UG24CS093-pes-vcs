@@ -126,3 +126,42 @@ void sha256_hex(const uint8_t *data, size_t len, char out[65]) {
         sprintf(out + i*2, "%02x", digest[i]);
     out[64] = '\0';
 }
+
+/* ── Utility helpers ────────────────────────────────────────── */
+ 
+void die(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+ 
+void *xmalloc(size_t n) {
+    void *p = malloc(n);
+    if (!p) die("malloc");
+    return p;
+}
+ 
+void *xrealloc(void *p, size_t n) {
+    void *q = realloc(p, n);
+    if (!q) die("realloc");
+    return q;
+}
+ 
+char *xstrdup(const char *s) {
+    char *d = strdup(s);
+    if (!d) die("strdup");
+    return d;
+}
+ 
+int make_dirs(const char *path) {
+    char tmp[MAX_PATH];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            if (mkdir(tmp, 0755) < 0 && errno != EEXIST) return -1;
+            *p = '/';
+        }
+    }
+    if (mkdir(tmp, 0755) < 0 && errno != EEXIST) return -1;
+    return 0;
+}
